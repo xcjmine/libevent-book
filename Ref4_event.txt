@@ -4,6 +4,8 @@ include::license.txt[]
 
 Working with events
 -------------------
+使用 events
+-------------------
 
 Libevent's basic unit of operation is the 'event'.  Every event
 represents a set of conditions, including:
@@ -14,6 +16,13 @@ represents a set of conditions, including:
    - A timeout expiring.
    - A signal occurring.
    - A user-triggered event.
+
+Libevent的基础执行单位是'event'。每个event代表一组条件，包括:
+   - 当一个文件描述符已经准备好可读或者可写时
+   - 当一个文件描述符将要可读或者可写时(只适用于电平触发的IO复用)
+   - 当一个定时器到期触发时
+   - 当触发了一个信号时
+   - 用户主动触发时
 
 Events have similar lifecycles.  Once you call a Libevent function to
 set up an event and associate it with an event base, it becomes
@@ -27,10 +36,20 @@ being pending when its callback runs.  You can make a pending event
 non-pending by 'deleting' it, and you can 'add' a non-pending event to
 make it pending again.
 
+Events拥有相似的生命周期。当你调用一个Libevent函数设置一个事件并将它与一个event base关联，
+它就被*初始化*了。此时，你可以'add'，这样这个event就在base中处于*待触发状态*。当event处于
+待触发状态时，当能够触发这个event的条件发生时(比如，文件描述符状态改变，或者定时器触发)，这
+个event就变成*激活状态*，并且会运行用户设置的回调函数。如果这个event被设置成*永久的*，它会
+继续变为待触发状态。如果不是永久的，它运行完回调函数之后就不会再等待被再次触发。你也可以通过
+'deleting'来停止一个正在等待触发的event。也可以用'add'来让event重新等待触发。
+
 Constructing event objects
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+构造 event 对象
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To create a new event, use the event_new() interface.
+创建一个event, 可以使用event_new()接口。
 
 .Interface
 [code,C]
@@ -60,14 +79,27 @@ events.  When the event is active, Libevent will invoke the provided
 bitfield of _all_ the events that triggered, and the value that was passed
 in for 'arg' when the function was constructed.
 
+event_new()函数尝试分配并初始化一个供'base'使用的event。'what'参数是一组上面列出来的
+枚举。(他们的意思在下面说明。) 如果'fd'参数非否，那它就是我们将要检测可读可写事件的文件描
+述符。当event被激活，Libevent会调用用户提供的回调函数'cb'，并传递给它参数：文件描述符'fd'
+，还有一个标记代表event被哪些条件触发，以及回调函数构造时用户传递的'arg'参数。
+
 On an internal error, or invalid arguments, event_new() will return NULL.
+
+如果有内部错误或者传参错误，event_new()会返回NULL。
 
 All new events are initialized and non-pending.  To make an event
 pending, call event_add() (documented below).
 
+所有新创建的events都是初始化好但是没有进入待触发状态的。为了让一个event进入待触发状态，
+需要调用event_add()函数。
+
 To deallocate an event, call event_free().  It is safe to call
 event_free() on an event that is pending or active: doing so makes the
 event non-pending and inactive before deallocating it.
+
+为了销毁一个event，需要调用event_free()。不管event是待激活状态还是激活状态，调用
+event_free()都是安全的：这么做可以保证event销毁前是未进入待激活状态并且是未激活的。
 
 .Example
 [code,C]
@@ -110,7 +142,12 @@ The above functions are defined in <event2/event.h>, and first
 appeared in Libevent 2.0.1-alpha.  The event_callback_fn type
 first appeared as a typedef in Libevent 2.0.4-alpha.
 
+上面的函数都定义在<event2/event.h>中，首次出现在Libevent 2.0.4-alpha中。
+
 The event flags
+^^^^^^^^^^^^^^^
+
+event 触发标记
 ^^^^^^^^^^^^^^^
 
 EV_TIMEOUT::
@@ -122,37 +159,69 @@ EV_TIMEOUT::
     set in the 'what' argument to the callback function when a timeout
     has occurred.
 
+EV_TIMEOUT::
+    这个标记表明这个event将会在一段时间延时后会被触发。
+
+    EV_TIMEOUT标记在event被创建初始化时会被忽略：你可以在add这个event的时候设置
+    一个延时时间。当延时事件发生时这个标记传递给回调函数的'what'参数中。
+
 EV_READ::
     This flag indicates an event that becomes active when the provided
     file descriptor is ready for reading.
+
+EV_READ::
+    这个标记表明一个event会在关联的文件描述符上有可读事件时被激活触发。
 
 EV_WRITE::
     This flag indicates an event that becomes active when the provided
     file descriptor is ready for writing.
 
+EV_WRITE::
+    这个标记表明一个event会在关联的文件描述符上有可写事件时被激活触发。
+
 EV_SIGNAL::
     Used to implement signal detection.  See "Constructing signal events"
     below.
 
+EV_SIGNAL::
+    用来捕获信号。见"构造信号event"
+
 EV_PERSIST::
     Indicates that the event is 'persistent'.  See "About Event
     Persistence" below.
+
+EV_PERSIST::
+    表明这个event是长期的。见 "关于永久event"
 
 EV_ET::
     Indicates that the event should be edge-triggered, if the
     underlying event_base backend supports edge-triggered events.
     This affects the semantics of EV_READ and EV_WRITE.
 
+EV_ET::
+    表明这个event的触发方式为电平触发，并且需要event_base的底层方法支持电平触发。
+    这个效果对EV_READ 和 EV_WRITE有效。
+
 Since Libevent 2.0.1-alpha, any number of events may be pending for
 the same conditions at the same time.  For example, you may have two
 events that will become active if a given fd becomes ready to read.
 The order in which their callbacks are run is undefined.
 
+自从Libevent 2.0.1-alpha开始，任意数量的events可以在同一时刻被同一个条件触发。
+举个例子，当一个文件描述符可读时，你可以有2个events被激活，他们的回调函数被执行的
+顺序是不确定的。
+
 These flags are defined in <event2/event.h>.  All have existed since
 before Libevent 1.0, except for EV_ET, which was introduced in
 Libevent 2.0.1-alpha.
 
+这些标记被定义在<event2/event.h>里。除了EV_ET之外的所有标记都在Libevent 1.0之前
+的版本里就存在，EV_ET在Libevent 2.0.1-alpha版本中引入。
+
 About Event Persistence
+^^^^^^^^^^^^^^^^^^^^^^^
+
+关于永久event
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 By default, whenever a pending event becomes active (because its fd is
@@ -161,6 +230,8 @@ non-pending right before its
 callback is executed.  Thus, if you want to make the event pending
 again, you can call event_add() on it again from inside
 the callback function.
+
+
 
 If the EV_PERSIST flag is set on an event, however, the event is
 'persistent.'  This means that event remains pending even when its
