@@ -231,12 +231,18 @@ callback is executed.  Thus, if you want to make the event pending
 again, you can call event_add() on it again from inside
 the callback function.
 
-
+通常情况下，当一个event被激活之后(比如它的fd可读可写，又比如它的定时器到期)，它在对应的
+回调函数被执行前将不再处于新的待激活状态。这样的话，如果你希望让这个event重新处于待激活
+状态，你就需要在回调函数里再次调用event_add()函数。
 
 If the EV_PERSIST flag is set on an event, however, the event is
 'persistent.'  This means that event remains pending even when its
 callback is activated.  If you want to make it non-pending from within its
 callback, you can call event_del() on it.
+
+但是如果这个event设置了EV_PERSIST标记，那么这个event将是'永久的'。这就意味着这个event
+被激活执行回调函数之后会继续等待被再次激活。这时候如果你希望让event不再被激活，则需要调用
+手动调用event_del()。
 
 The timeout on a persistent event resets whenever the event's callback
 runs.  Thus, if you have an event with flags EV_READ|EV_PERSIST and a
@@ -246,14 +252,27 @@ timeout of five seconds, the event will become active:
   - Whenever five seconds have passed since the event last became
     active.
 
+一个永久event上的定时设置会在event的回调函数运行后被重置。比如，如果你有一个带有
+EV_READ|EV_PERSIST标记的event，并且设置了5秒后运行，那么这个event将会被下面条件激活:
+
+  - 当socket可读就绪。
+  - 当event距上一次被激活时间达到5秒了。
+
 
 Creating an event as its own callback argument
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+创建一个event作为它自己回调函数的参数
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Frequently, you might want to create an event that receives itself as a
 callback argument.  You can't just pass a pointer to the event as an argument
 to event_new(), though, because it does not exist yet.  To solve this problem,
 you can use event_self_cbarg().
+
+通常你可以希望创建一个将自身作为回调函数参数的event。这里你不能通过event_new()的时候
+直接传递一个指向event的指针作为参数，因为这个时候event还未被创建。为了解决这个总是，你可以
+使用event_self_cbarg()。
 
 .Interface
 [code,C]
@@ -264,6 +283,9 @@ void *event_self_cbarg();
 The event_self_cbarg() function returns a "magic" pointer which, when passed
 as an event callback argument, tells event_new() to create an event receiving
 itself as its callback argument.
+
+event_self_cbarg()函数返回一个 "魔法" 指针，当传递给event作为回调函数参数的时候，告诉
+event_new()创建event的时候将自己作为回调函数的参数。
 
 .Example
 [code,C]
@@ -300,13 +322,24 @@ won't work as a callback argument for non-events, however.
 
 The event_self_cbarg() function was introduced in Libevent 2.1.1-alpha.
 
+这个函数可以被用于event_new(), evtimer_new(), evsignal_new(), event_assign(),
+evtimer_assign(), 以及 evsignal_assign()等函数。它不能被用于event以外其他回调函数的参数。
+
+event_self_cbarg()函数自Libevent 2.1.1-alpha版本引入。
+
 Timeout-only events
+^^^^^^^^^^^^^^^^^^^
+
+定时器events
 ^^^^^^^^^^^^^^^^^^^
 
 As a convenience, there are a set of macros beginning with evtimer_ that
 you can use in place of the event_* calls to allocate and manipulate
 pure-timeout events.  Using these macros provides no benefit beyond
 improving the clarity of your code.
+
+为了方便，Libevent里面定义了一些以evtimer_开头的宏来代替event_*函数来构造和操作单纯
+的定时器events。使用这些宏并不会为你带来任何好处，只是能提高你代码的可读性。
 
 .Interface
 [code,C]
@@ -324,11 +357,19 @@ improving the clarity of your code.
 These macros have been present since Libevent 0.6, except for evtimer_new(),
 which first appeared in Libevent 2.0.1-alpha.
 
+这些宏提出自Libevent 0.6版，除了evtimer_new()函数，它是从Libevent 2.0.1-alpha版
+开始出现的。
+
 Constructing signal events
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+构造信号处理events
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Libevent can also watch for POSIX-style signals.  To construct a
 handler for a signal, use:
+
+Libevent也可以监测POSIX风格的信号。为了构造一个信号处理器, 可以使用:
 
 .Interface
 [code,C]
@@ -339,6 +380,8 @@ handler for a signal, use:
 
 The arguments are as for event_new, except that we provide a signal
 number instead of a file descriptor.
+
+参数和event_new差不多，除了我们需要提供一个代表信号的值来取代文件描述符。
 
 //BUILD: SKIP
 .Example
@@ -355,11 +398,18 @@ Note that signal callbacks are run in the event loop after the signal
 occurs, so it is safe for them to call functions that you are not
 supposed to call from a regular POSIX signal handler.
 
+注意, 信号回调函数是运行在当信号触发之后的事件循环里的，所以回调函数是安全的，你
+不用担心回调会在普通的POSIX信号处理函数中被调用。
+
 WARNING: Don't set a timeout on a signal event.  It might not be
 supported.  [FIXME: is this true?]
 
+警告: 不要在一个信号event上设置定时器。暂时是不支持的。
+
 There are also a set of convenience macros you can use when working
 with signal events.
+
+同样的Libevent里也有一系列宏来简化你使用信号events的方式。
 
 .Interface
 [code,C]
@@ -375,7 +425,13 @@ with signal events.
 The evsignal_* macros have been present since Libevent 2.0.1-alpha.
 Prior versions called them signal_add(), signal_del(), and so on.
 
+evsignal_*系列宏出现自Libevent 2.0.1-alpha版本。之前版本中可以使用singal_add()，
+signal_del()等函数。
+
 Caveats when working with signals
++++++++++++++++++++++++++++++++++
+
+使用singal时需要注意的点
 +++++++++++++++++++++++++++++++++
 
 With current versions of Libevent, with most backends, only one event_base
@@ -383,9 +439,18 @@ per process at a time can be listening for signals.  If you add signal events
 to two event_bases at once ---even if the signals are different!--- only one
 event_base will receive signals.
 
+在Libevent当前的版本中，大部分底层方法，一个进程中同一时刻只能使用一个event_base来监听信号。
+如果你同时向2个event_base中添加信号events， ---甚至用的是2个不同的信号!--- 只有一个
+event_base可以收到信号。
+
 The kqueue backend does not have this limitation.
 
+但是底层用kqueue的话没有这个限制。
+
 Setting up events without heap-allocation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+不使用堆来构建设置events。
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For performance and other reasons, some people like to allocate events
