@@ -450,7 +450,7 @@ The kqueue backend does not have this limitation.
 Setting up events without heap-allocation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-不使用堆来构建设置events。
+不使用event_new()构建events。
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For performance and other reasons, some people like to allocate events
@@ -464,9 +464,18 @@ saves them:
    - The time overhead from a possible additional cache miss if the
      event is not already in the cache.
 
+为了性能和一些其他原因，有人希望可以将event作为一个较大的结构体的成员
+变量。跟使用单个event想比，可以节约下面几点:
+   - 用new创建小结构体带来的内存碎片消耗。
+   - 用event指针取值带来的时间消耗。
+   - 缓存未命中带来的时间消耗。
+
 Using this method risks breaking binary compatibility with other
 versions of of Libevent, which may have different sizes for the event
 structure.
+
+使用这些函数会打破与其他版本Libevent的二进制兼容，有可能会造成event的大小
+不一致。
 
 These are _very_ small costs, and do not matter for most applications.
 You should just stick to using event_new() unless you *know* that
@@ -474,6 +483,11 @@ you're incurring a significant performance penalty for heap-allocating
 your events.  Using event_assign() can cause hard-to-diagnose errors
 with future versions of Libevent if they use a larger event structure
 than the one you're building with.
+
+其实原来用event_new创建event的方式只有_非常_小的消耗，对于大部分应用来说
+无关紧要。你最好使用event_new()来创建event，除非你*明确*你正在遭受由使用
+event_new()带来的严重性能问题。如果将event作为结构体成员变量，在不同版本
+中使用event_assign()可能会导致一些隐性错误。
 
 .Interface
 [code,C]
@@ -487,12 +501,17 @@ All the arguments of event_assign() are as for event_new(), except for
 the 'event' argument, which must point to an uninitialized event.  It returns
 0 on success, and -1 on an internal error or bad arguments.
 
+event_assign()的大部分参数和event_new()一样，除了'event'参数，它是一个指向
+未初始化的event的指针。调用成功返回0，失败或者参数错误返回-1。
+
 .Example
 [code,C]
 --------
 #include <event2/event.h>
 /* Watch out!  Including event_struct.h means that your code will not
  * be binary-compatible with future versions of Libevent. */
+/* 注意！ 包含event_struct.h头文件意味着你的代码将不能和
+ * 未来版本的Libevent二进制兼容。 */
 #include <event2/event_struct.h>
 #include <stdlib.h>
 
@@ -517,14 +536,23 @@ struct event_pair *event_pair_new(struct event_base *base, evutil_socket_t fd)
 You can also use event_assign() to initialize stack-allocated or
 statically allocated events.
 
+你也可以用event_assign()来初始化栈上创建的以及静态的event结构体。
+
 .WARNING
 Never call event_assign() on an event that is already pending in an
 event base.  Doing so can lead to extremely hard-to-diagnose
 errors.  If the event is already initialized and pending, call
 event_del() on it *before* you call event_assign() on it again.
 
+.警告
+绝对不要对一个已经追加到event_base中处于待激活状态的event使用event_assign()函数。
+这么做会导致非常难以察觉的错误。如果event已经初始化完成并且处于待激活状态，
+在你在这个event上使用event_assign() *之前* 先使用event_del()来删除它。
+
 There are convenience macros you can use to event_assign() a timeout-only or
 a signal event:
+
+下面有一个宏来方便你使用event_assign()来初始化一个定时器或信号event:
 
 .Interface
 [code,C]
