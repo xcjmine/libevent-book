@@ -552,7 +552,7 @@ event_del() on it *before* you call event_assign() on it again.
 There are convenience macros you can use to event_assign() a timeout-only or
 a signal event:
 
-下面有一个宏来方便你使用event_assign()来初始化一个定时器或信号event:
+下面有一些宏来方便你使用event_assign()来初始化一个定时器或信号event:
 
 .Interface
 [code,C]
@@ -567,6 +567,9 @@ If you need to use event_assign() *and* retain binary compatibility with
 future versions of Libevent, you can ask the Libevent library to tell
 you at runtime how large a 'struct event' should be:
 
+如果你需要使用event_assign() *并且* 需要与未来版本保持二进制兼容，那么你可以
+运行时向Libevent库请求'event结构体'的具体大小:
+
 .Interface
 [code,C]
 -----
@@ -578,14 +581,25 @@ a struct event.  As before, you should only be using this function if
 you know that heap-allocation is actually a significant problem in your
 program, since it can make your code much harder to read and write.
 
+这个函数返回需要为event预留内存大小的字节数。跟之前一样，你需要明确知道
+堆构建event是造成你程序里严重问题根源的时候再去使用它，因为它会把你代码的
+可读性变差。
+
 Note that event_get_struct_event_size() may in the future give you a value
 _smaller_ than 'sizeof(struct event)'.  If this happens, it means that
 any extra bytes at the end of 'struct event' are only padding bytes reserved
 for use by a future version of Libevent.
 
+注意event_get_struct_event_size()可能会在未来版本获得比'sizeof(struct event)' _小_
+的数值。如果发生这种情况，意味着'event'结构体最后的那些额外字节是为了给未来版本的
+Libevent做保留的填充字节。
+
 Here's the same example as above, but instead of relying on the size
 of 'struct event' from event_struct.h, we use event_get_struct_size()
 to use the correct size at runtime.
+
+这里有一个和上面一样的例子，但是用event_get_struct_size()获取运行时event大小，来取代
+event_struct.h头文件中event结构体的大小。
 
 .Example
 [code,C]
@@ -596,22 +610,29 @@ to use the correct size at runtime.
 /* When we allocate an event_pair in memory, we'll actually allocate
  * more space at the end of the structure.  We define some macros
  * to make accessing those events less error-prone. */
+/* 当我们内存中申请一个event_pair结构，我们实际上会在结构体后面
+ * 申请更多的内存来保存event。我们定义一些宏
+ * 来不容易出错地访问这些event。*/
 struct event_pair {
          evutil_socket_t fd;
 };
 
 /* Macro: yield the struct event 'offset' bytes from the start of 'p' */
+/* 宏: 返回指针'p'偏移'offset'字节的地址作为event指针。 */
 #define EVENT_AT_OFFSET(p, offset) \
             ((struct event*) ( ((char*)(p)) + (offset) ))
 /* Macro: yield the read event of an event_pair */
+/* 宏: 返回event_pair中读事件event结构的地址 */
 #define READEV_PTR(pair) \
             EVENT_AT_OFFSET((pair), sizeof(struct event_pair))
 /* Macro: yield the write event of an event_pair */
+/* 宏: 返回event_pair中写事件event结构的地址 */
 #define WRITEEV_PTR(pair) \
             EVENT_AT_OFFSET((pair), \
                 sizeof(struct event_pair)+event_get_struct_event_size())
 
 /* Macro: yield the actual size to allocate for an event_pair */
+/* 宏: 返回为event_pair结构体申请内存的实际大小 */
 #define EVENT_PAIR_SIZE() \
             (sizeof(struct event_pair)+2*event_get_struct_event_size())
 
@@ -634,12 +655,22 @@ previously, it returned void.  The event_get_struct_event_size()
 function was introduced in Libevent 2.0.4-alpha.  The event structure
 itself is defined in <event2/event_struct.h>.
 
+event_assign()函数字义在<event2/event.h>头文件中。出现自Libevent 2.0.1-alpha版本。
+2.0.3-alpha版本开始，它返回一个int类型。之前没有返回值。event_get_struct_event_size()
+函数始于Libevent 2.0.4-alpha版本。event结构体是定义在<event2/event_struct.h>头文件中的。
+
 Making events pending and non-pending
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+设置events等待激活和取消等待激活
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Once you have constructed an event, it won't actually do anything
 until you have made it 'pending' by adding it.  You do this with
 event_add:
+
+一旦你构造了一个event，它实际上还不能做任何事，除非你将它add到event_base中使它
+处于待激活状态。你可以使用event_add来这么做:
 
 .Interface
 [code,C]
@@ -653,14 +684,25 @@ failure.  If 'tv' is NULL, the event is added with no timeout.
 Otherwise, 'tv' is the size of the timeout in seconds and
 microseconds.
 
+对一个未处于等待激活状态的event调用event_add会让它加入到配置了的event_base中。
+函数成功时返回0，失败返回-1。如果'tv'为空，这个event将不会设置超时。相反的，
+'tv'包含超时设置的秒数和毫秒数。
+
 If you call event_add() on an event that is _already_ pending, it will
 leave it pending, and reschedule it with the provided timeout.  If the
 event is already pending, and you re-add it with the timeout NULL,
 event_add() will have no effect.
 
+如果你对一个*已经*处于等激活状态的event调用event_add()，不会改变event的状态，
+并且如果给了超时的话会重置超时时间。如果event已经在等待激活，并且你用超时时间
+参数为空来重新add它，event_add()函数不会有任何效果。
+
 NOTE: Do not set 'tv' to the time at which you want the timeout to
 run.  If you say "tv->tv_sec = time(NULL)+10;" on 1 January 2010, your
 timeout will wait 40 years, not 10 seconds.
+
+注意：不要将参数'tv'设置成你希望程序运行的时间。比如你在2010年1月1号用
+"tv->tv_sec = time(NULL)+10;", 那么你的超时将会在40年后过期，而非10秒后过期。
 
 .Interface
 [code,C]
@@ -672,9 +714,15 @@ Calling event_del on an initialized event makes it non-pending and
 non-active.  If the event was not pending or active, there is no
 effect.  The return value is 0 on success, -1 on failure.
 
+对一个初始化好的event调用event_del可以使它取消等待激活状态。如果event并未
+正在等待或者已被激活，这么做没有任何效果。函数成功时返回0，失败返回-1。
+
 NOTE: If you delete an event after it becomes active but before
 its callback has a chance to execute, the callback will not be
 executed.
+
+注意：如果你在一个event激活后且它的回调函数被执行前删除一个event，那么它的
+回调函数将不会被执行。
 
 .Interface
 [code,C]
@@ -689,10 +737,18 @@ timeout but no IO or signal component, event_remove_timer() has the
 same effect as event_del(). The return value is 0 on success, -1 on
 failure.
 
+最后，使用event_remove_timer可以让你在不影响event中信号或者IO组件的情况
+下，移除一个已处于等待激活的event的超时设定。如果event没有设置超时，
+event_remove_timer()函数没有任何效果。如果event只有超时设定而没有IO或者
+信号组件，那么event_remove_timer和event_del的效果一样。函数成功时返回0，
+失败时返回-1。
 
 These are defined in <event2/event.h>; event_add() and event_del()
 have existed since Libevent 0.1; event_remove_timer() was added in
 2.1.2-alpha.
+
+这些函数被定义在<event2/event.h>头文件中，event_add() 和 event_del()出现自
+Libevent 0.1版。event_remove_timer()是在2.1.2-alpha版中新增加的。
 
 Events with priorities
 ~~~~~~~~~~~~~~~~~~~~~~
