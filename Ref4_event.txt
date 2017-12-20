@@ -753,14 +753,23 @@ Libevent 0.1版。event_remove_timer()是在2.1.2-alpha版中新增加的。
 Events with priorities
 ~~~~~~~~~~~~~~~~~~~~~~
 
+事件的优先级
+~~~~~~~~~~~~~~~~~~~~~~
+
 When multiple events trigger at the same time, Libevent does not
 define any order with respect to when their callbacks will be
 executed.  You can define some events as more important than others by
 using priorities.
 
+当有多个event在同一时刻触发，Libevent不会去定义他们的回调函数被执行的先后顺序。
+你可以通过定义优先级来让一些event比其他的event更重要。
+
 As discussed in an earlier section, each event_base has one or more
 priority values associated with it.  Before adding an event to the
 event_base, but after initializing it, you can set its priority.
+
+在之前一个章节的讨论过，每个event_base关联了一个或者多个优先级。在添加一个event到
+event_base之前，在event初始化之后，你可以设置它的优先级。
 
 .Interface
 [code,C]
@@ -772,10 +781,15 @@ The priority of the event is a number between 0 and the number of
 priorities in an event_base, minus 1.  The function returns 0 on
 success, and -1 on failure.
 
+event的优先级是一个从0到event_base优先级-1的数值。这个函数成功时返回0，失败返回-1。
+
 When multiple events of multiple priorities become active, the
 low-priority events are not run.  Instead, Libevent runs the high
 priority events, then checks for events again.  Only when no
 high-priority events are active are the low-priority events run.
+
+当拥有多个优先级的多个event被激活，低优先级的event不会运行。而Libevent会运行高优先级的
+event，然后再次检查event。走到没有亮优先级的event激活时才会运行低优先级的event。
 
 .Example
 [code,C]
@@ -793,6 +807,7 @@ void main_loop(evutil_socket_t fd)
   base = event_base_new();
   event_base_priority_init(base, 2);
   /* Now base has priority 0, and priority 1 */
+  /* 现在base有优先级0和1 */
   important = event_new(base, fd, EV_WRITE|EV_PERSIST, write_cb, NULL);
   unimportant = event_new(base, fd, EV_READ|EV_PERSIST, read_cb, NULL);
   event_priority_set(important, 0);
@@ -801,14 +816,21 @@ void main_loop(evutil_socket_t fd)
   /* Now, whenever the fd is ready for writing, the write callback will
      happen before the read callback.  The read callback won't happen at
      all until the write callback is no longer active. */
+  /* 现在，只要fd准备可写的时候，写数据的回调函数就会在读数据之前被执行。而读数据不会
+     被执行，除非写事件不再被激活。*/
 }
 ----------
 
 When you do not set the priority for an event, the default is the
 number of queues in the event base, divided by 2.
 
+TODO ?
+当你没有设置event的优先级的时候，它的默认优先级是event_base中队列数，以2分割。
+
 This function is declared in <event2/event.h>.  It has existed since
 Libevent 1.0.
+
+这个函数被定义在<event2/event.h>头文件里，首次出现自Libevent 1.0版。
 
 Inspecting event status
 ~~~~~~~~~~~~~~~~~~~~~~~
