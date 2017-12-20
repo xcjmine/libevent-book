@@ -835,8 +835,13 @@ Libevent 1.0.
 Inspecting event status
 ~~~~~~~~~~~~~~~~~~~~~~~
 
+检查事件状态
+~~~~~~~~~~~~~~~~~~~~~~~
+
 Sometimes you want to tell whether an event has been added, and check
 what it refers to.
+
+有时候你你可能需要知道一个event是否已被添加,并且检查它绑定了什么事件。
 
 .Interface
 [code,C]
