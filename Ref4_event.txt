@@ -955,8 +955,13 @@ event_get_priority()。其他函数新出现在Libevent 2.0.4-alpha版本中。
 Finding the currently running event
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+查看当前正在运行的event
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 For debugging or other purposes, you can get a pointer to the currently
 running event.
+
+为了调试或者其他目的，你可能希望获得当前正在运行的event的指针。
 
 .Interface
 [code,C]
@@ -968,15 +973,26 @@ Note that this function's behavior is only defined when it's called from
 within the provided event_base's loop.  Calling it from another thread is not
 supported, and can cause undefined behavior.
 
+需要注意的是这个函数只能作用于提供的event_base的主循环里，在其他地方或者另外的
+线程调用都不行，会带来未知错误。
+
 This function is declared in <event2/event.h>.  It was introduced in Libevent
 2.1.1-alpha.
 
+这个函数定义在<event2/event.h>头文件中。自Libevent 2.1.1-alpha版本引入。
+
 Configuring one-off events
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+设置一次性event
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you don't need to add an event more than once, or delete it once it
 has been added, and it doesn't have to be persistent, you can use
 event_base_once().
+
+如果你不需要多次添加一个event，或者添加完之后马上要删除它，并且它不是永久的，
+那你可以使用event_base_once()。
 
 .Interface
 [code,C]
@@ -991,9 +1007,16 @@ inserted and run with the default priority.  When the callback is
 finally done, Libevent frees the internal event structure itself.
 The return value is 0 on success, -1 on failure.
 
+这个函数接口跟 event_new() 一样，除了它不支持EV_SIGNAL和EV_PERSIST。这个计划中的
+event会以默认的优先级插入和运行。当它的回调函数运行完成之后，Libevent会自动释放这个
+内部的event结构体。这个函数成功时返回0，失败返回-1。
+
 Events inserted with event_base_once cannot be deleted or manually
 activated: if you want to be able to cancel an event, create it with the
 regular event_new() or event_assign() interfaces.
+
+通过event_base_once添加的event不能被删除或者手动触发: 如果你希望能够删除一个event，
+请使用通常的 event_new() 或 event_assign() 接口。
 
 Note also that at up to Libevent 2.0, if the event is never triggered, the
 internal memory used to hold it will never be freed.  Starting in Libevent
@@ -1002,11 +1025,20 @@ they haven't activated, but still be aware: if there's some storage
 associated with their callback arguments, that storage won't be released
 unless your program has done something to track and release it.
 
+注意在Libevent 2.0版之前，如果一个一次性event从来没有被激活过，那这个内部event将
+永远不会从内存上释放。从Libevent 2.1.2-alpha开始，这些event的内存会在event_base被释放
+的时候被释放。
+
 Manually activating an event
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+手动激活一个event
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Rarely, you may want to make an event active even though its
 conditions have not triggered.
+
+
 
 .Interface
 [code,C]
