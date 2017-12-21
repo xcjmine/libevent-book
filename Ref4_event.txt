@@ -781,15 +781,15 @@ The priority of the event is a number between 0 and the number of
 priorities in an event_base, minus 1.  The function returns 0 on
 success, and -1 on failure.
 
-event的优先级是一个从0到event_base优先级-1的数值。这个函数成功时返回0，失败返回-1。
+event的优先级是一个从0到event_base优先级总数-1的数值。这个函数成功时返回0，失败返回-1。
 
 When multiple events of multiple priorities become active, the
 low-priority events are not run.  Instead, Libevent runs the high
 priority events, then checks for events again.  Only when no
 high-priority events are active are the low-priority events run.
 
-当拥有多个优先级的多个event被激活，低优先级的event不会运行。而Libevent会运行高优先级的
-event，然后再次检查event。走到没有亮优先级的event激活时才会运行低优先级的event。
+当拥有多个优先级的多个event被同时激活时，低优先级的event不会马上运行。而Libevent会运行高优先级的
+event，然后再次检查event。直到没有高优先级的event激活时才会运行低优先级的event。
 
 .Example
 [code,C]
@@ -824,8 +824,8 @@ void main_loop(evutil_socket_t fd)
 When you do not set the priority for an event, the default is the
 number of queues in the event base, divided by 2.
 
-TODO ?
-当你没有设置event的优先级的时候，它的默认优先级是event_base中队列数，以2分割。
+TODO TEST
+当你没有设置event的优先级的时候，它的默认优先级是event_base中优先级队列总数除以2。
 
 This function is declared in <event2/event.h>.  It has existed since
 Libevent 1.0.
@@ -872,6 +872,13 @@ on.  If 'tv_out' is provided, and EV_TIMEOUT is set in 'what', and the
 event is currently pending or active on a timeout, then 'tv_out' is
 set to hold the time when the event's timeout will expire.
 
+event_pending函数能够确定给定的event是否正在等待激活或者已经被激活。如果
+是，并且EV_READ, EV_WRITE, EV_SIGNAL, 和 EV_TIMEOUT等任意标记被设置到参数
+'what'中，函数会返回一个数，表示event是否正在等待其中的某几个条件或者已被
+某几个条件激活，这个数是这些条件的按位或。如果提供了'tv_out'参数，并且标记
+EV_TIMEOUT被设置到'what'参数中，那么'tv_out'参数会被设置成event还有多少时间
+触发。
+
 The event_get_fd() and event_get_signal() functions return the
 configured file descriptor or signal number for an event.  The
 event_get_base() function returns its configured event_base.  The
@@ -881,9 +888,18 @@ event_get_callback_arg() functions return the callback function and
 argument pointer.  The event_get_priority() function returns the event's
 currently assigned priority.
 
+event_get_fd() 和 event_get_signal() 函数返回一个event中设置的文件描述符或
+信号值。event_get_base() 函数返回event添加到的那个event_base。event_get_events()
+函数返回event设置监听的事件类型标记(EV_READ, EV_WRITE等)。event_get_callback()
+和 event_get_callback_arg() 函数返回event的回调函数和自定义参数指针。
+event_get_priority() 函数返回event当前分配的优先级。
+
 The event_get_assignment() function copies all of the assigned fields of
 the event into the provided pointers.  If any of the pointers is NULL,
 it is ignored.
+
+event_get_assignment() 函数拷贝event参数里的所有字段到该函数给定参数里的指针上。
+如果哪个参数没有提供指针，那么那个字段会被忽略。
 
 .Example
 [code,C]
@@ -893,6 +909,8 @@ it is ignored.
 
 /* Change the callback and callback_arg of 'ev', which must not be
  * pending. */
+/* 改变参数'ev'的回调函数和回调函数参数, 此时'ev'应该还不能开始监听
+ * 事件等待激活。 */
 int replace_callback(struct event *ev, event_callback_fn new_callback,
     void *new_callback_arg)
 {
@@ -907,6 +925,8 @@ int replace_callback(struct event *ev, event_callback_fn new_callback,
     if (pending) {
         /* We want to catch this here so that we do not re-assign a
          * pending event.  That would be very very bad. */
+        /* 我们不应该到达这里因为我们不能重新分配一个已经处于等待激活状态
+         * 的event。这是很不好的。*/
         fprintf(stderr,
                 "Error! replace_callback called on a pending event!\n");
         return -1;
@@ -926,6 +946,11 @@ function has existed since Libevent 0.1.  Libevent 2.0.1-alpha introduced
 event_get_fd() and event_get_signal().  Libevent 2.0.2-alpha introduced
 event_get_base(). Libevent 2.1.2-alpha added event_get_priority().  The
 others were new in Libevent 2.0.4-alpha.
+
+这些函数被定义在<event2/event.h>头文件中。event_pending() 函数出现自Libevent 0.1
+版。Libevent 2.0.1-alpha版引进了event_get_fd() 和 event_get_signal()。
+Libevent 2.0.2-alpha版引进了event_get_base()。Libevent 2.1.2-alpha版添加了
+event_get_priority()。其他函数新出现在Libevent 2.0.4-alpha版本中。
 
 Finding the currently running event
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
