@@ -1038,7 +1038,7 @@ Manually activating an event
 Rarely, you may want to make an event active even though its
 conditions have not triggered.
 
-
+少部分情况下，你可能希望在一个event的条件未发生的情况下手动激活一个event。
 
 .Interface
 [code,C]
@@ -1051,9 +1051,16 @@ This function makes an event 'ev' become active with the flags 'what'
 not need to have previously been pending, and activating it does not
 make it pending.
 
+这个函数可以使'ev'参数指向的event通过'what'参数的标记激活，(EV_READ, EV_WRITE
+和 EV_TIMEOUT的组合)。这个event不需要事件设置成等待激活状态，手动激活它也不会让
+他变成等待激活。
+
 Warning: calling event_active() recursively on the same event may result in
 resource exhaustion. The following snippet of code is an example of how
 event_active can be used incorrectly.
+
+警告: 在一个event上递归地调用event_active()函数会导致资源耗尽。下面的代码片断是一个
+不正确使用event_active的坏例子。
 
 //BUILD: INC:event2/event.h
 .Bad Example: making an infinite loop with event_active()
@@ -1086,6 +1093,8 @@ int main(int argc, char **argv) {
 
 This creates a situation where the event loop is only executed once and calls
 the function "cb" forever.
+
+这样用会产生一种情况，一个event循环只执行了一次但是会无限循环'cb'回调。
 
 //BUILD: INC:event2/event.h
 .Example: Alternative solution to the above problem using timers
@@ -1148,6 +1157,8 @@ int main(int argc, char **argv) {
 
 This function is defined in <event2/event.h>.  It has existed
 since Libevent 0.3.
+
+这个函数定义在<event2/event.h>头文件中。出现自Libevent 0.3版本。
 
 Optimizing common timeouts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
