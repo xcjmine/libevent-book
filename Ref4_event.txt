@@ -1052,8 +1052,8 @@ not need to have previously been pending, and activating it does not
 make it pending.
 
 这个函数可以使'ev'参数指向的event通过'what'参数的标记激活，(EV_READ, EV_WRITE
-和 EV_TIMEOUT的组合)。这个event不需要事件设置成等待激活状态，手动激活它也不会让
-他变成等待激活。
+和 EV_TIMEOUT的组合)。这个event不需要提前设置成等待激活状态，手动激活它也不会让
+他变成等待激活状态。
 
 Warning: calling event_active() recursively on the same event may result in
 resource exhaustion. The following snippet of code is an example of how
@@ -1064,6 +1064,7 @@ event_active can be used incorrectly.
 
 //BUILD: INC:event2/event.h
 .Bad Example: making an infinite loop with event_active()
+.坏例子：使用event_active()产生死循环。
 [code,C]
 --------
 struct event *ev;
@@ -1072,6 +1073,8 @@ static void cb(int sock, short which, void *arg) {
         /* Whoops: Calling event_active on the same event unconditionally
            from within its callback means that no other events might not get
            run! */
+        /* 哎呀: 没有条件得在event回调函数内部对同一个event调用event_active
+           意味着其他event不会有机会运行*/
 
 	event_active(ev, EV_WRITE, 0);
 }
@@ -1094,10 +1097,11 @@ int main(int argc, char **argv) {
 This creates a situation where the event loop is only executed once and calls
 the function "cb" forever.
 
-这样用会产生一种情况，一个event循环只执行了一次但是会无限循环'cb'回调。
+这样用会产生一个问题，一个event循环只执行了一次但是会无限循环调用'cb'回调函数。
 
 //BUILD: INC:event2/event.h
 .Example: Alternative solution to the above problem using timers
+.例子：使用定时器解决上面的问题是可选方案之一
 [code,C]
 --------
 
@@ -1129,6 +1133,7 @@ int main(int argc, char **argv) {
 
 //BUILD: INC:event2/event.h
 .Example: Alternative solution to the above problem using event_config_set_max_dispatch_interval()
+.例子: 使用event_config_set_max_dispatch_interval()作为另一种可行的解决方案。
 [code,C]
 --------
 struct event *ev;
@@ -1140,6 +1145,7 @@ static void cb(int sock, short which, void *arg) {
 int main(int argc, char **argv) {
         struct event_config *cfg = event_config_new();
         /* Run at most 16 callbacks before checking for other events. */
+        /* 在检查一个event之前最多允许运行16次回调函数 */
         event_config_set_max_dispatch_interval(cfg, NULL, 16, 0);
 	struct event_base *base = event_base_new_with_config(cfg);
 	ev = event_new(base, -1, EV_PERSIST | EV_READ, cb, NULL);
@@ -1163,16 +1169,27 @@ since Libevent 0.3.
 Optimizing common timeouts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+优化相同延时定时器
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Current versions of Libevent use a binary heap algorithm to keep track
 of pending events' timeouts.  A binary heap gives performance of order
 O(lg n) for adding and deleting each event timeout.  This is optimal if
 you're adding events with a randomly distributed set of timeout values,
 but not if you have a large number of events with the same timeout.
 
+当前Libevent版本使用二叉堆算法来王跟踪处于等待激活状态的event的超时时间。
+二叉堆为排序提供了较高的性能，以及复杂度为O(lg n)的插入删除操作。如果你
+用来插入延时为随机分布的event，这是最佳方案，但是如果你有大量的event使用
+相同的延时，那就不太合适了。
+
 For example, suppose you have ten thousand events, each of which should
 trigger its timeout five seconds after it was added.  In a situation
 like this, you could get O(1) performance for each timeout by using a
 doubly-linked queue implementation.
+
+举个例子，假设你有一万个event，每个都会在被添加到event_base之后5秒的时候
+被触发。对于这种需要的解决方案，你可以使用复杂度为O(1)的双端队列来实现。
 
 Naturally, you wouldn't want to use a queue for all of your timeout
 values, since a queue is only faster for constant timeout values.  If
@@ -1180,12 +1197,21 @@ some of the timeouts are more-or-less randomly distributed, then adding
 one of those timeouts to a queue would take O(n) time, which would be
 significantly worse than a binary heap.
 
+当然，你并不希望使用一个队列来做为你所有定时器的实现，毕竟队列只在所有延时
+都是固定值的时候才更快。如果一些延时是或多或少随机分布的，这样添加一个这样
+的延时到队列的时候需要消耗O(n)的时间，这就意味着比二叉堆更糟糕了。
+
 Libevent lets you solve this by placing some of your timeouts in queues,
 and others in the binary heap.  To do this, you ask Libevent for a
 special "common timeout" timeval, which you then use to add events
 having that timeval.  If you have a very large number of events with
 a single common timeout, using this optimization should improve
 timeout performance.
+
+Libevent可以让你通过替换一些定时器使用队列，另一些使用二叉堆的方式解决这个
+问题。为了这么做，你需要向Libevent申请一个特殊的"通用延时定时器"，然后就可
+以用来添加定时event了。如果你有大量固定延时时间来激活的event，这么优化可以
+提升定时器性能。
 
 .Interface
 [code,C]
@@ -1203,6 +1229,13 @@ work with the specific base you used to construct it.  Do not rely on
 its actual contents: Libevent uses them to tell itself which queue to
 use.
 
+这个函数需要一个event_base和一个固定延时duration作为参数进行初始化，它返回
+一个特殊的timeval结构体指针，你可以用它来指定一个event应当被添加到O(1)复杂
+度的列表中，而不是O(lg n)复杂度的二叉堆。这个特殊的timeval在你的代码里可以
+被自由拷贝或者重新分配。它只作用于你用来构造它的指定的event_base中。绝对不
+要使用它的真实值：因为Libevent用他们来确定使用哪个队列。
+
+
 .Example
 [code,C]
 -----
@@ -1213,6 +1246,9 @@ use.
  * nearly all of which have a ten-second timeout.  If initialize_timeout
  * is called, we'll tell Libevent to add the ten-second ones to an O(1)
  * queue. */
+/* 我们将会在一个给定的event_base上创建大量定时10秒触发的event，
+ * 如果initialize_timeout函数被调用，我们会告诉Libevent添加这些event到
+ * 复杂度为O(1)的队列中去。 */
 struct timeval ten_seconds = { 10, 0 };
 
 void initialize_timeout(struct event_base *base)
@@ -1227,6 +1263,7 @@ int my_event_add(struct event *ev, const struct timeval *tv)
 {
     /* Note that ev must have the same event_base that we passed to
        initialize_timeout */
+    /* 注意这个event必须添加到我们传给initialize_timeout的同一个event_base中 */
     if (tv && tv->tv_sec == 10 && tv->tv_usec == 0)
         return event_add(ev, &ten_seconds);
     else
@@ -1238,15 +1275,26 @@ As with all optimization functions, you should avoid using the
 common_timeout functionality unless you're pretty sure that it matters
 for you.
 
+如同所有优化函数，你应当尽量避免使用通用延时定时器相关功能，除非你明确知道
+这么做对你是有益的。
+
 This functionality was introduced in Libevent 2.0.4-alpha.
 
+这些函数引进自Libevent 2.0.4-alpha版本。
+
 Telling a good event apart from cleared memory
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+判断一个event是否健康，避免其内存已被清除
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Libevent provides functions that you can use to distinguish an
 initialized event from memory that has been cleared by setting it to 0
 (for example, by allocating it with calloc() or clearing it with
 memset() or bzero()).
+
+Libevent提供了一些函数可以帮忙你分辨是否是已初始化过的event，避免它的内存已
+被清除了。(比如，使用calloc()来申请内存或者使用memset()和bzero()修改过内存)。
 
 .Interface
 [code,C]
@@ -1263,9 +1311,16 @@ and a hunk of uninitialized memory.  You should not use them
 unless you know that the memory in question is either cleared or
 initialized as an event.
 
+.警告
+这些函数不能可靠地分辨已经初始化的event和一块未初始化的内存。你不应该使用它
+们，除非你明确那块内存是已经被清除了的或者已被初始化为event了的。
+
 Generally, you shouldn't need to use these functions unless you've got a
 pretty specific application in mind.  Events returned by event_new() are
 always initialized.
+
+通常情况，你不需要使用这些函数，除非你考虑到一些非常特殊的应用。那些event_new
+函数返回的event始终是初始化过的。
 
 .Example
 [code,C]
@@ -1304,7 +1359,12 @@ int add_reader(struct reader *r, struct event_base *b)
 
 The event_initialized() function has been present since Libevent 0.3.
 
+event_initialized()函数出现自Libevent 0.3版。
+
 Obsolete event manipulation functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+废弃的event操作函数
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Pre-2.0 versions of Libevent did not have event_assign() or
@@ -1312,6 +1372,11 @@ event_new().  Instead, you had event_set(), which associated the event
 with the "current" base.  If you had more than one base, you needed to
 remember to call event_base_set() afterwards to make sure that the
 event was associated with the base you actually wanted to use.
+
+在Libevent 2.0版本之前是没有event_assign()和event_new()的。你可以用event_set()
+来代替，用来关联event和当前event_base。如果你需要使用多于一个的event_base，
+你需要记住在它后面调用event_base_set()来确保event被关联到你希望使用的event_base
+上去。
 
 .Interface
 [code,C]
@@ -1325,9 +1390,15 @@ The event_set() function was like event_assign(), except for its use
 of the current base.  The event_base_set() function changes the base
 associated with an event.
 
+event_set()函数和event_assign()很像，除了这只能用于当前event base的用法。
+The event_base_set()函数改变关联到event上的event_base。
+
 There were variants of event_set() for dealing more conveniently with
 timers and signals: evtimer_set() corresponded roughly to evtimer_assign(),
 and evsignal_set() corresponded roughly to evsignal_assign().
+
+这里还有一个event_set()的变种，处理定时器和信号的时候会更方便：evtimer_set()
+是粗糙版evtimer_assign()。同样的evsignal_set()是粗糙版evsignal_assign()。
 
 Versions of Libevent before 2.0 used "signal_" as the prefix for the
 signal-based variants of event_set() and so on, rather than "evsignal_".
@@ -1337,11 +1408,23 @@ Libevent (before 0.6) used "timeout_" instead of "evtimer_".  Thus, if you're
 doing code archeology, you might see timeout_add(), timeout_del(),
 timeout_initialized(), timeout_set(), timeout_pending(), and so on.
 
+Libevent 2.0之前的版本使用"signal_"来做为信号相关变体函数的前缀，比如signal_set()
+等，而不是用"evsignal_"。(这就是说，原来有signal_set(), signal_add(), signal_del(),
+signal_pending(), 和 signal_initialized())。更古老的Libevent版本(0.6之前) 使用
+"timeout_"前缀来代替"evtimer_"。因此如果你在使用这些古老的版本，你可能会见到
+timeout_add(), timeout_del(),timeout_initialized(), timeout_set(), timeout_pending()
+等函数。
+
 In place of the event_get_fd() and event_get_signal() functions, older
 versions of Libevent (before 2.0) used two macros called EVENT_FD() and
 EVENT_SIGNAL().  These macros inspected the event structure's contents
 directly and so prevented binary compatibility between versions; in 2.0 and
 later they are just aliases for event_get_fd() and event_get_signal().
+
+Libevent老版本(2.0之前)使用2个宏EVENT_FD() 和 EVENT_SIGNAL()来取代event_get_fd()
+和 event_get_signal() 函数。这些宏会直接检查event结构体内容，所以它们造成了版本
+之间的二进制不兼容。在2.0之后的版本中，这些宏只是event_get_fd() 和 event_get_signal()
+的一个别名而已。
 
 Since versions of Libevent before 2.0 did not have
 locking support, it wasn't safe to call any of the functions that
@@ -1349,15 +1432,28 @@ change an event's state with respect to a base from outside the thread
 running the base.  These include event_add(), event_del(),
 event_active(), and event_base_once().
 
+因为在Libevent 2.0之前的版本不支持锁，所以在运行event_base线程之外的线程运行任何
+能改动event状态的函数都是不安全的。这些函数包括event_add(), event_del(), event_active(),
+和 event_base_once()等。
+
 There was also an event_once() function that played the role of
 event_base_once(), but used the current base.
+
+这里还有一个event_once()函数来扮演event_base_once()的角色，但是仅能用于当前event_base。
 
 The EV_PERSIST flag did not interoperate sensibly with timeouts before
 Libevent 2.0. Instead resetting the timeout whenever the event was
 activated, the EV_PERSIST flag did nothing with the timeout.
+
+EV_PERSIST标记在Libevent 2.0之前的版本不能很好的和定时器一起工作。无论何时event激活时，
+本应该重置event的定时时间，但是EV_PERSIST标记什么都不会做。
 
 Libevent versions before 2.0 did not support having multiple events
 inserted at the same time with the same fd and the same READ/WRITE.
 In other words, only one event at a time could be waiting for read on
 each fd, and only one event at a time could be waiting for write on
 each fd.
+
+Libevent 2.0之前的版本不支持同时插入绑定同个文件描述符fd且监听相同读写事件的多个event。
+换句话说，每个文件描述符fd上同一时间只有一个event可以等待可读就绪。同一时间也只有一个
+event可以等待可写事件。
