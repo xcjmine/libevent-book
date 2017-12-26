@@ -1391,7 +1391,7 @@ of the current base.  The event_base_set() function changes the base
 associated with an event.
 
 event_set()函数和event_assign()很像，除了这只能用于当前event base的用法。
-The event_base_set()函数改变关联到event上的event_base。
+event_base_set()函数改变关联到event上的event_base。
 
 There were variants of event_set() for dealing more conveniently with
 timers and signals: evtimer_set() corresponded roughly to evtimer_assign(),
